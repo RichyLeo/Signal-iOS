@@ -1,4 +1,6 @@
-
+//
+//  Copyright (c) 2018 Open Whisper Systems. All rights reserved.
+//
 
 import Foundation
 import os
@@ -8,22 +10,28 @@ public class OutageDetection: NSObject {
     @objc(sharedManager)
     public static let shared = OutageDetection()
 
+    @objc public static let outageStateDidChange = Notification.Name("OutageStateDidChange")
+
     // These properties should only be accessed on the main thread.
-    private var hasOutage = false {
+    @objc
+    public var hasOutage = false {
         didSet {
             SwiftAssertIsOnMainThread(#function)
+
+            NotificationCenter.default.postNotificationNameAsync(OutageDetection.outageStateDidChange, object: nil)
         }
     }
     private var mayHaveOutage = false {
         didSet {
             SwiftAssertIsOnMainThread(#function)
-            
+
             ensureCheckTimer()
         }
     }
-    
+
+    // We want to be conversative and only
     private func checkForOutageSync() -> Bool {
-        let host = CFHostCreateWithName(nil,"uptime.signal.org" as CFString).takeRetainedValue()
+        let host = CFHostCreateWithName(nil, "uptime.signal.org" as CFString).takeRetainedValue()
         CFHostStartInfoResolution(host, .addresses, nil)
         var success: DarwinBoolean = false
         guard let addresses = CFHostGetAddressing(host, &success)?.takeUnretainedValue() as NSArray? else {
@@ -40,15 +48,20 @@ public class OutageDetection: NSObject {
             if getnameinfo(address.bytes.assumingMemoryBound(to: sockaddr.self), socklen_t(address.length),
                            &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST) == 0 {
                 let addressString = String(cString: hostname)
-                if addressString != "127.0.0.1" {
-                    Logger.verbose("\(logTag) addressString: \(addressString)")
+                let kHealthyAddress = "127.0.0.1"
+                let kOutageAddress = "127.0.0.2"
+                if addressString == kHealthyAddress {
+                    // Do nothing.
+                } else if addressString == kOutageAddress {
                     isOutageDetected = true
+                } else {
+                    owsFail("\(logTag) unexpected address: \(addressString)")
                 }
             }
         }
         return isOutageDetected
     }
-    
+
     private func checkForOutageAsync() {
         DispatchQueue.global().async {
             let isOutageDetected = self.checkForOutageSync()
@@ -57,10 +70,9 @@ public class OutageDetection: NSObject {
             }
         }
     }
-    
+
     private var checkTimer: Timer?
-    private func ensureCheckTimer()
-    {
+    private func ensureCheckTimer() {
         // Only monitor for outages in the main app.
         guard CurrentAppContext().isMainApp else {
             return
@@ -71,19 +83,19 @@ public class OutageDetection: NSObject {
                 // Already has timer.
                 return
             }
-            
+
             // The TTL of the DNS record is 60 seconds.
-            checkTimer = WeakTimer.scheduledTimer(timeInterval: 60, target: self, userInfo: nil, repeats: true) { [weak self] timer in
+            checkTimer = WeakTimer.scheduledTimer(timeInterval: 60, target: self, userInfo: nil, repeats: true) { [weak self] _ in
                 SwiftAssertIsOnMainThread(#function)
-                
+
                 guard CurrentAppContext().isMainAppAndActive else {
                     return
                 }
-                
+
                 guard let strongSelf = self else {
                     return
                 }
-                
+
                 strongSelf.checkForOutageAsync()
             }
         } else {
@@ -95,7 +107,7 @@ public class OutageDetection: NSObject {
     @objc
     public func reportNetworkSuccess() {
         SwiftAssertIsOnMainThread(#function)
-        
+
         mayHaveOutage = true
         hasOutage = false
     }
@@ -103,7 +115,7 @@ public class OutageDetection: NSObject {
     @objc
     public func reportNetworkFailure() {
         SwiftAssertIsOnMainThread(#function)
-        
+
         mayHaveOutage = false
     }
 }

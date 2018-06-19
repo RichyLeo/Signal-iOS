@@ -75,6 +75,7 @@ NSString *const kArchivedConversationsReuseIdentifier = @"kArchivedConversations
 
 @property (nonatomic) NSLayoutConstraint *hideArchiveReminderViewConstraint;
 @property (nonatomic) NSLayoutConstraint *hideMissingContactsPermissionViewConstraint;
+@property (nonatomic) NSLayoutConstraint *outageViewConstraint;
 
 @property (nonatomic) TSThread *lastThread;
 
@@ -159,6 +160,10 @@ NSString *const kArchivedConversationsReuseIdentifier = @"kArchivedConversations
                                              selector:@selector(yapDatabaseModifiedExternally:)
                                                  name:YapDatabaseModifiedExternallyNotification
                                                object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(outageStateDidChange:)
+                                                 name:OutageDetection.outageStateDidChange
+                                               object:nil];
 }
 
 - (void)dealloc
@@ -184,6 +189,13 @@ NSString *const kArchivedConversationsReuseIdentifier = @"kArchivedConversations
     [self reloadTableViewData];
 }
 
+- (void)outageStateDidChange:(id)notification
+{
+    OWSAssertIsOnMainThread();
+
+    [self updateReminderViews];
+}
+
 #pragma mark - View Life Cycle
 
 - (void)loadView
@@ -197,12 +209,21 @@ NSString *const kArchivedConversationsReuseIdentifier = @"kArchivedConversations
         [SignalApp.sharedApp setHomeViewController:self];
     }
 
+    ReminderView *outageView = [ReminderView
+        nagWithText:NSLocalizedString(@"OUTAGE_WARNING", @"Label warning the user that the Signal service may be down.")
+          tapAction:nil];
+    [self.view addSubview:outageView];
+    [outageView autoPinWidthToSuperview];
+    [outageView autoPinToTopLayoutGuideOfViewController:self withInset:0];
+    self.outageViewConstraint = [outageView autoSetDimension:ALDimensionHeight toSize:0];
+    self.outageViewConstraint.priority = UILayoutPriorityRequired;
+
     ReminderView *archiveReminderView =
         [ReminderView explanationWithText:NSLocalizedString(@"INBOX_VIEW_ARCHIVE_MODE_REMINDER",
                                               @"Label reminding the user that they are in archive mode.")];
     [self.view addSubview:archiveReminderView];
     [archiveReminderView autoPinWidthToSuperview];
-    [archiveReminderView autoPinToTopLayoutGuideOfViewController:self withInset:0];
+    [archiveReminderView autoPinEdge:ALEdgeTop toEdge:ALEdgeBottom ofView:outageView];
     self.hideArchiveReminderViewConstraint = [archiveReminderView autoSetDimension:ALDimensionHeight toSize:0];
     self.hideArchiveReminderViewConstraint.priority = UILayoutPriorityRequired;
 
@@ -258,12 +279,17 @@ NSString *const kArchivedConversationsReuseIdentifier = @"kArchivedConversations
 {
     BOOL shouldHideArchiveReminderView = self.homeViewMode != HomeViewMode_Archive;
     BOOL shouldHideMissingContactsPermissionView = !self.shouldShowMissingContactsPermissionView;
+    BOOL shouldHideOutageView = !OutageDetection.sharedManager.hasOutage;
+
     if (self.hideArchiveReminderViewConstraint.active == shouldHideArchiveReminderView
-        && self.hideMissingContactsPermissionViewConstraint.active == shouldHideMissingContactsPermissionView) {
+        && self.hideMissingContactsPermissionViewConstraint.active == shouldHideMissingContactsPermissionView
+        && self.outageViewConstraint.active == shouldHideOutageView) {
         return;
     }
     self.hideArchiveReminderViewConstraint.active = shouldHideArchiveReminderView;
     self.hideMissingContactsPermissionViewConstraint.active = shouldHideMissingContactsPermissionView;
+    self.outageViewConstraint.active = shouldHideOutageView;
+
     [self.view setNeedsLayout];
     [self.view layoutSubviews];
 }
