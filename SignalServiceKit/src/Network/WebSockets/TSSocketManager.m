@@ -24,6 +24,7 @@
 #import "TextSecureKitEnv.h"
 #import "Threading.h"
 #import "WebSocketResources.pb.h"
+#import <SignalServiceKit/SignalServiceKit-Swift.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -666,6 +667,8 @@ NSString *const kNSNotification_SocketManagerStateDidChange = @"kNSNotification_
     }
 
     self.state = SocketManagerStateOpen;
+
+    [OutageDetection.sharedManager reportNetworkSuccess];
 }
 
 - (void)webSocket:(SRWebSocket *)webSocket didFailWithError:(NSError *)error {
@@ -801,6 +804,8 @@ NSString *const kNSNotification_SocketManagerStateDidChange = @"kNSNotification_
         // Otherwise clean up and align state.
         [self applyDesiredSocketState];
     }
+    
+    [OutageDetection.sharedManager reportNetworkFailure];
 }
 
 - (void)webSocket:(SRWebSocket *)webSocket
