@@ -141,6 +141,11 @@ NS_ASSUME_NONNULL_BEGIN
                             }
                         }]];
 
+    [items addObject:[OWSTableItem itemWithTitle:@"Fetch system contacts"
+                                     actionBlock:^() {
+                                         [Environment.current.contactsManager requestSystemContactsOnce];
+                                     }]];
+
     return [OWSTableSection sectionWithTitle:self.name items:items];
 }
 
